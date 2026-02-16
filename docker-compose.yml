@@ -50,7 +50,7 @@ networks:
   omnipos-network:
     driver: bridge
   cloudflare_tunnel_default:
-    external: true
+    driver: bridge
 
 # No named volumes needed for certificates now
 # volumes:
