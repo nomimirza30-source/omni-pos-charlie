@@ -42,14 +42,16 @@ export const useStore = create(
             ],
             branding: {
                 appName: 'OmniPOS',
+                siteUrl: '',
                 logoUrl: '',
                 primaryColor: '#38bdf8', // Default Sky Blue
                 secondaryColor: '#818cf8', // Default Indigo
                 themeMode: 'dark', // dark or light
+                wiseHandle: '', // For automated "Approve/Reject" links
+                revolutHandle: '', // For automated Revolut payment links
+                cardPaymentUrl: '', // For card payment (e.g. Stripe link)
                 availableColors: [
-                    '#38bdf8', '#818cf8', '#f472b6', '#fbbf24', '#34d399', '#a78bfa', '#f87171',
-                    '#2dd4bf', '#fb923c', '#e879f9', '#60a5fa', '#facc15', '#4ade80', '#f43f5e',
-                    '#6366f1', '#ec4899', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'
+                    '#38bdf8', '#818cf8', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#64748b'
                 ]
             },
 
@@ -74,10 +76,14 @@ export const useStore = create(
                         // Map PascalCase from .NET to camelCase for the store
                         const mappedBranding = {
                             appName: data.appName || data.AppName || get().branding.appName,
+                            siteUrl: data.siteUrl || data.SiteUrl || get().branding.siteUrl,
                             logoUrl: data.logoUrl || data.LogoUrl || get().branding.logoUrl,
                             primaryColor: data.primaryColor || data.PrimaryColor || get().branding.primaryColor,
                             secondaryColor: data.secondaryColor || data.SecondaryColor || get().branding.secondaryColor,
-                            themeMode: data.themeMode || data.ThemeMode || get().branding.themeMode
+                            themeMode: data.themeMode || data.ThemeMode || get().branding.themeMode,
+                            wiseHandle: data.wiseHandle || data.WiseHandle || get().branding.wiseHandle,
+                            revolutHandle: data.revolutHandle || data.RevolutHandle || get().branding.revolutHandle,
+                            cardPaymentUrl: data.cardPaymentUrl || data.CardPaymentUrl || get().branding.cardPaymentUrl
                         };
 
                         if (mappedBranding.logoUrl && mappedBranding.logoUrl.startsWith('/uploads')) {
@@ -224,26 +230,32 @@ export const useStore = create(
             })),
 
             addNotification: (notification) => set((state) => {
-                // Create unique ID based on notification content and timestamp
-                const uniqueId = `${notification.title}-${notification.message}-${Date.now()}`;
+                const timestamp = notification.timestamp || new Date().toISOString();
+                const id = notification.id || notification.notificationId || `${notification.title}-${notification.message}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
 
-                // Check if this notification already exists (within last 2 seconds)
+                // Check for duplicate (same content within 3 seconds)
                 const now = Date.now();
                 const isDuplicate = state.notifications.some(n =>
                     n.title === notification.title &&
                     n.message === notification.message &&
-                    (now - new Date(n.timestamp).getTime()) < 2000 // Within 2 seconds
+                    (now - new Date(n.timestamp).getTime()) < 3000
                 );
 
-                if (isDuplicate) {
-                    console.log('[Notification] Skipping duplicate:', notification.title);
-                    return state; // Don't add duplicate
-                }
+                if (isDuplicate) return state;
+
+                const canonicalRole = (role) => {
+                    if (!role) return '';
+                    if (['Chef', 'Assistant Chef', 'Kitchen'].includes(role)) return 'Kitchen';
+                    return role;
+                };
+
+                const userRole = state.user?.role || '';
+                const userCanonical = canonicalRole(userRole);
 
                 const notifications = [
-                    { id: uniqueId, timestamp: new Date().toISOString(), ...notification },
+                    { ...notification, id, timestamp },
                     ...state.notifications
-                ].slice(0, 5); // Keep only latest 5
+                ].slice(0, 20); // Keep 20 to prevent pushing out unread ones during bulk updates (like Payment)
 
                 syncChannel.postMessage({ type: 'SYNC_NOTIFICATIONS', payload: notifications });
 
@@ -263,7 +275,6 @@ export const useStore = create(
                     oscillator.start(audioContext.currentTime);
                     oscillator.stop(audioContext.currentTime + 0.1);
 
-                    // Second tone
                     const oscillator2 = audioContext.createOscillator();
                     const gainNode2 = audioContext.createGain();
                     oscillator2.connect(gainNode2);
@@ -283,7 +294,7 @@ export const useStore = create(
             }),
 
             clearNotification: (id) => set((state) => ({
-                notifications: state.notifications.filter(n => n.id !== id)
+                notifications: state.notifications.filter(n => n.id !== id && n.notificationId !== id)
             })),
 
             // Table Actions
@@ -649,16 +660,21 @@ export const useStore = create(
                         ? {
                             ...o,
                             pendingAmendments: amendments,
-                            syncStatus: 'Offline'
+                            syncStatus: 'Offline',
+                            clock: { ...o.clock, [state.deviceId || 'unknown']: (o.clock[state.deviceId || 'unknown'] || 0) + 1 }
                         }
                         : o
                 );
 
+                const tableNum = order.tableId
+                    ? order.tableId.split(',').filter(Boolean).map(tid => state.tables.find(t => t.id === tid)?.num).join(', ')
+                    : 'Walk-in';
+
                 get().addNotification({
                     title: 'Amendment Proposed',
-                    message: `Order #${orderId.slice(0, 4)} has new proposed changes.`,
+                    message: `Order #${orderId.slice(0, 4)} (Table ${tableNum}) has new proposed changes.`,
                     type: 'info',
-                    roleFilter: ['Admin', 'Manager', 'Kitchen', 'Owner']
+                    roleFilter: ['Admin', 'Manager', 'Kitchen', 'Chef', 'Assistant Chef', 'Owner']
                 });
 
                 get().addLog(`Amendment proposed for order ${orderId.slice(0, 4)}`);
@@ -753,6 +769,38 @@ export const useStore = create(
                 }
             },
 
+            updateOrderFinancials: async (id, payload) => {
+                const { token, currentTenantId, addLog } = get();
+                if (!token) return;
+
+                const tidHeader = currentTenantId?.includes?.('tenant') ? '00000000-0000-0000-0000-000000001111' : currentTenantId;
+
+                try {
+                    const response = await fetch(`/api/Order/${id}/financials`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                            'X-Tenant-ID': tidHeader
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        // Optimistic update local state
+                        set(state => ({
+                            orders: state.orders.map(o => o.id === id ? { ...o, ...payload } : o)
+                        }));
+                        addLog(`Financials updated for order ${id.slice(0, 4)}`);
+                    } else {
+                        const err = await response.text();
+                        addLog(`Financial update failed: ${err}`);
+                    }
+                } catch (error) {
+                    addLog(`Financial update error: ${error.message}`);
+                }
+            },
+
             updateOrderStatus: async (id, newStatus) => {
                 const order = get().orders.find(o => o.id === id);
                 if (!order) {
@@ -820,6 +868,24 @@ export const useStore = create(
                         message: `Order #${id.slice(0, 4)} (Table ${tableNum}) has been paid by ${order.paymentMethod || 'Cash'}`,
                         type: 'success',
                         roleFilter: ['Admin', 'Manager', 'Waiter', 'Till', 'Owner']
+                    },
+                    'Amended-Preparing': {
+                        title: 'Amendment Accepted',
+                        message: `Kitchen has ACCEPTED changes for #${id.slice(0, 4)} (Table ${tableNum})`,
+                        type: 'success',
+                        roleFilter: ['Admin', 'Manager', 'Waiter', 'Till', 'Chef', 'Assistant Chef', 'Kitchen']
+                    },
+                    'Amended-Ready': {
+                        title: 'Amended Order Ready',
+                        message: `AMENDED Order #${id.slice(0, 4)} (Table ${tableNum}) is ready for delivery`,
+                        type: 'success',
+                        roleFilter: ['Admin', 'Manager', 'Waiter', 'Till']
+                    },
+                    'Amended-Served': {
+                        title: 'Amended Order Served',
+                        message: `AMENDED Order #${id.slice(0, 4)} (Table ${tableNum}) has been delivered`,
+                        type: 'info',
+                        roleFilter: ['Admin', 'Manager', 'Kitchen']
                     }
                 };
 
@@ -1198,7 +1264,10 @@ export const useStore = create(
                         LogoUrl: updates.logoUrl,
                         PrimaryColor: updates.primaryColor,
                         SecondaryColor: updates.secondaryColor,
-                        ThemeMode: updates.themeMode
+                        ThemeMode: updates.themeMode,
+                        WiseHandle: updates.wiseHandle,
+                        RevolutHandle: updates.revolutHandle,
+                        CardPaymentUrl: updates.cardPaymentUrl
                     };
 
                     // Persist to backend
@@ -1282,25 +1351,33 @@ export const useStore = create(
 
                 addLog(`Sync engine: Preparing ${unsynced.length} orders...`);
 
-                const payload = unsynced.map(o => ({
-                    orderId: o.id,
-                    staffId: null, // 'U1' is not a valid GUID, setting to null for MVP
-                    customerName: o.customerName || 'Walk-in',
-                    tableId: o.tableId,
-                    totalAmount: parseFloat(o.amount),
-                    status: o.status,
-                    metadataJson: JSON.stringify(o.items),
-                    notes: o.notes || '',
-                    pendingAmendmentsJson: JSON.stringify(o.pendingAmendments || []),
-                    vectorClock: JSON.stringify(o.clock),
-                    createdAt: o.createdAt,
-                    discountReason: o.discountReason || '',
-                    serviceCharge: parseFloat(o.serviceCharge || 0),
-                    discount: parseFloat(o.discount || 0),
-                    discountType: o.discountType || 'none',
-                    finalTotal: (o.finalTotal !== undefined && o.finalTotal !== null) ? parseFloat(o.finalTotal) : parseFloat(o.amount),
-                    paidAt: o.paidAt || null
-                }));
+                const payload = unsynced.map(o => {
+                    const tableNum = o.tableId
+                        ? o.tableId.split(',').filter(Boolean).map(tid => get().tables.find(t => t.id === tid)?.num).join(', ')
+                        : 'Walk-in';
+
+                    return {
+                        orderId: o.id,
+                        staffId: null, // 'U1' is not a valid GUID, setting to null for MVP
+                        customerName: o.customerName || 'Walk-in',
+                        tableId: o.tableId,
+                        tableNumber: tableNum,
+                        totalAmount: parseFloat(o.amount),
+                        status: o.status,
+                        metadataJson: JSON.stringify(o.items),
+                        notes: o.notes || '',
+                        pendingAmendmentsJson: JSON.stringify(o.pendingAmendments || []),
+                        vectorClock: JSON.stringify(o.clock),
+                        createdAt: o.createdAt,
+                        discountReason: o.discountReason || '',
+                        serviceCharge: parseFloat(o.serviceCharge || 0),
+                        discount: parseFloat(o.discount || 0),
+                        discountType: o.discountType || 'none',
+                        finalTotal: (o.finalTotal !== undefined && o.finalTotal !== null) ? parseFloat(o.finalTotal) : parseFloat(o.amount),
+                        paidAt: o.paidAt || null,
+                        isAmended: o.isAmended || false
+                    };
+                });
 
                 console.log('[useStore] Final Sync Payload:', payload);
                 addLog(`Sync engine: Posting to /api/OfflineSync/sync-orders...`);
@@ -1473,12 +1550,8 @@ export const useStore = create(
                         fetchTables();
                     });
 
-                    // Listen for global notifications
-                    connection.on('ReceiveNotification', (notification) => {
-                        set((state) => ({
-                            notifications: [notification, ...state.notifications]
-                        }));
-                    });
+                    // Global notifications handler is already registered above via ReceiveNotification
+                    // Removing redundant listener to prevent double notification state updates
 
                 } catch (error) {
                     console.error('[SignalR] Connection failed:', error);
@@ -1520,6 +1593,12 @@ export const useStore = create(
                 const { token, currentTenantId, fetchEmployees, addLog } = get();
                 const tidHeader = currentTenantId?.includes?.('tenant') ? '00000000-0000-0000-0000-000000001111' : currentTenantId;
 
+                // Sanitize staffData (e.g., ensure payRate is a valid number)
+                const sanitizedData = {
+                    ...staffData,
+                    payRate: parseFloat(staffData.payRate) || 0
+                };
+
                 try {
                     const response = await fetch('/api/staff', {
                         method: 'POST',
@@ -1528,20 +1607,23 @@ export const useStore = create(
                             'X-Tenant-ID': tidHeader,
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify(staffData)
+                        body: JSON.stringify(sanitizedData)
                     });
 
                     if (response.ok) {
-                        addLog(`Staff member ${staffData.fullName} created successfully`);
+                        addLog(`Staff member ${sanitizedData.fullName} created successfully`);
                         await fetchEmployees();
                         return true;
                     } else {
+                        const status = response.status;
                         const err = await response.text();
-                        addLog(`Staff creation failed: ${err}`);
+                        addLog(`Staff creation failed (${status}): ${err}`);
+                        console.error(`[addStaffAsync] Server error ${status}:`, err);
                         return false;
                     }
                 } catch (error) {
                     addLog(`Network error creating staff: ${error.message}`);
+                    console.error('[addStaffAsync] Network error:', error);
                     return false;
                 }
             },
@@ -1650,7 +1732,8 @@ export const useStore = create(
                                 discountType: so.discountType || so.DiscountType || 'none',
                                 finalTotal: (so.finalTotal !== undefined && so.finalTotal !== null) ? parseFloat(so.finalTotal) :
                                     (so.FinalTotal !== undefined && so.FinalTotal !== null) ? parseFloat(so.FinalTotal) : parseFloat(totalAmount || 0),
-                                paidAt: so.paidAt || so.PaidAt || null
+                                paidAt: so.paidAt || so.PaidAt || null,
+                                isAmended: so.isAmended || so.IsAmended || false
                             };
 
                             if (mappedOrder.serviceCharge > 0 || mappedOrder.discount > 0) {

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -5,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using OmniPOS.Api.Data;
 using OmniPOS.Api.Services;
+using OmniPOS.Api.Services.Payments;
 using Microsoft.EntityFrameworkCore;
 
 namespace OmniPOS.Api.Controllers;
@@ -20,6 +22,69 @@ public class AuthController : ControllerBase
     {
         _context = context;
         _config = config;
+    }
+
+    [HttpGet("fix-wise-handle")]
+    [AllowAnonymous]
+    public async Task<IActionResult> FixWiseHandle(string handle)
+    {
+        var tenant = await _context.Tenants.FirstOrDefaultAsync();
+        if (tenant == null) return NotFound("No tenant found");
+        
+        tenant.WiseHandle = handle;
+        tenant.CardPaymentUrl = $"https://wise.com/pay/me/{handle}";
+        await _context.SaveChangesAsync();
+        
+        return Ok(new { message = $"Updated WiseHandle to {handle}", tenant });
+    }
+
+    [HttpGet("fix-wise-key")]
+    [AllowAnonymous]
+    public async Task<IActionResult> FixWiseApiKey(string key)
+    {
+        var tenant = await _context.Tenants.FirstOrDefaultAsync();
+        if (tenant == null) return NotFound("No tenant found");
+        
+        tenant.WiseApiKey = key;
+        // Also ensure Profile ID is set if we have it hardcoded or passed
+        // For now just set key
+        await _context.SaveChangesAsync();
+        
+        return Ok(new { message = "Updated WiseApiKey", tenant });
+    }
+
+    [HttpGet("fix-wise-profile")]
+    [AllowAnonymous] // Helper to set profile ID
+    public async Task<IActionResult> FixWiseProfileId(string profileId)
+    {
+        var tenant = await _context.Tenants.FirstOrDefaultAsync();
+        if (tenant == null) return NotFound("No tenant found");
+        
+        tenant.WiseProfileId = profileId;
+        await _context.SaveChangesAsync();
+        
+        return Ok(new { message = "Updated WiseProfileId", tenant });
+    }
+
+    [HttpGet("test-wise-link")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TestWiseLink()
+    {
+        var tenant = await _context.Tenants.FirstOrDefaultAsync();
+        if (tenant == null) return NotFound("No tenant found");
+        
+        var service = HttpContext.RequestServices.GetRequiredService<IWiseService>();
+        var url = await service.CreatePaymentRequestAsync(1.00m, "GBP", "TEST_LINK", tenant.WiseApiKey, tenant.WiseProfileId);
+        
+        return Ok(new { url });
+    }
+
+    [HttpGet("debug-tenants")]
+    [AllowAnonymous]
+    public async Task<IActionResult> DebugTenants()
+    {
+        var tenants = await _context.Tenants.ToListAsync();
+        return Ok(tenants);
     }
 
     [HttpPost("login")]

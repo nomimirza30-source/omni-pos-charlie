@@ -3,11 +3,10 @@
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Hubs\NotificationHub.cs(11,24): warning CS8602: Dereference of a possibly null reference. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Hubs\NotificationHub.cs(21,24): warning CS8602: Dereference of a possibly null reference. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Hubs\NotificationHub.cs(31,24): warning CS8602: Dereference of a possibly null reference. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
+C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\PaymentController.cs(65,28): error CS0029: Cannot implicitly convert type 'string' to 'System.DateTime?' [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\StaffController.cs(172,19): warning CS8618: Non-nullable property 'WorkingDays' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
-C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\PaymentController.cs(63,29): error CS1061: 'Order' does not contain a definition for 'Table' and no accessible extension method 'Table' accepting a first argument of type 'Order' could be found (are you missing a using directive or an assembly reference?) [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
-C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\PaymentController.cs(96,29): error CS1061: 'Order' does not contain a definition for 'Table' and no accessible extension method 'Table' accepting a first argument of type 'Order' could be found (are you missing a using directive or an assembly reference?) [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\OrderController.cs(89,13): warning CS8602: Dereference of a possibly null reference. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
-C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Program.cs(302,42): warning CS8601: Possible null reference assignment. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
+C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Program.cs(314,42): warning CS8601: Possible null reference assignment. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 
 Build FAILED.
 
@@ -16,10 +15,9 @@ C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Hubs\NotificationHub.
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Hubs\NotificationHub.cs(31,24): warning CS8602: Dereference of a possibly null reference. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\StaffController.cs(172,19): warning CS8618: Non-nullable property 'WorkingDays' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
 C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\OrderController.cs(89,13): warning CS8602: Dereference of a possibly null reference. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
-C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Program.cs(302,42): warning CS8601: Possible null reference assignment. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
-C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\PaymentController.cs(63,29): error CS1061: 'Order' does not contain a definition for 'Table' and no accessible extension method 'Table' accepting a first argument of type 'Order' could be found (are you missing a using directive or an assembly reference?) [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
-C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\PaymentController.cs(96,29): error CS1061: 'Order' does not contain a definition for 'Table' and no accessible extension method 'Table' accepting a first argument of type 'Order' could be found (are you missing a using directive or an assembly reference?) [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
+C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Program.cs(314,42): warning CS8601: Possible null reference assignment. [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
+C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\Controllers\PaymentController.cs(65,28): error CS0029: Cannot implicitly convert type 'string' to 'System.DateTime?' [C:\Users\NaumanBaig\Desktop\Beta_Final_OmniPOS\OmniPOS.Api\OmniPOS.Api.csproj]
     6 Warning(s)
-    2 Error(s)
+    1 Error(s)
 
-Time Elapsed 00:00:01.42
+Time Elapsed 00:00:01.17

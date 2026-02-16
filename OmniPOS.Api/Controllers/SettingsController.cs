@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OmniPOS.Api.Data;
 using OmniPOS.Api.Middleware;
+using System;
 
 namespace OmniPOS.Api.Controllers;
 
@@ -76,10 +77,14 @@ public class SettingsController : ControllerBase
         return new BrandingResponse
         {
             AppName = tenant.AppName,
+            SiteUrl = tenant.SiteUrl,
             LogoUrl = tenant.LogoUrl,
             PrimaryColor = tenant.PrimaryColor,
             SecondaryColor = tenant.SecondaryColor,
-            ThemeMode = tenant.ThemeMode
+            ThemeMode = tenant.ThemeMode,
+            WiseHandle = tenant.WiseHandle,
+            RevolutHandle = tenant.RevolutHandle,
+            CardPaymentUrl = tenant.CardPaymentUrl
         };
     }
 
@@ -88,23 +93,30 @@ public class SettingsController : ControllerBase
     public async Task<IActionResult> UpdateBranding([FromBody] UpdateBrandingRequest request)
     {
         var tenantId = _tenantProvider.TenantId;
+        // Console.WriteLine($"[UpdateBranding] TenantId: {tenantId} WiseHandle: {request.WiseHandle}");
+
         if (tenantId == null) return BadRequest("Tenant not identified.");
 
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.TenantId == tenantId);
         if (tenant == null)
         {
+            Console.WriteLine($"[UpdateBranding] Creating new tenant for ID: {tenantId}");
             tenant = new Tenant { TenantId = tenantId.Value, Name = "New Tenant" };
             _context.Tenants.Add(tenant);
         }
 
         tenant.AppName = request.AppName ?? tenant.AppName;
+        tenant.SiteUrl = request.SiteUrl ?? tenant.SiteUrl;
         tenant.LogoUrl = request.LogoUrl ?? tenant.LogoUrl;
         tenant.PrimaryColor = request.PrimaryColor ?? tenant.PrimaryColor;
         tenant.SecondaryColor = request.SecondaryColor ?? tenant.SecondaryColor;
         tenant.ThemeMode = request.ThemeMode ?? tenant.ThemeMode;
+        if (request.WiseHandle != null) tenant.WiseHandle = request.WiseHandle;
+        if (request.RevolutHandle != null) tenant.RevolutHandle = request.RevolutHandle;
+        if (request.CardPaymentUrl != null) tenant.CardPaymentUrl = request.CardPaymentUrl;
 
         await _context.SaveChangesAsync();
-
+        // Console.WriteLine($"[UpdateBranding] Changes saved for Tenant {tenant.TenantId}. New WiseHandle: {tenant.WiseHandle}");
         return Ok(new { message = "Branding updated successfully." });
     }
 }
@@ -112,17 +124,25 @@ public class SettingsController : ControllerBase
 public class BrandingResponse
 {
     public string AppName { get; set; } = string.Empty;
+    public string SiteUrl { get; set; } = string.Empty;
     public string LogoUrl { get; set; } = string.Empty;
     public string PrimaryColor { get; set; } = "#38bdf8"; // Default Sky Blue
     public string SecondaryColor { get; set; } = "#818cf8"; // Default Indigo
     public string ThemeMode { get; set; } = "dark"; // dark or light
+    public string WiseHandle { get; set; } = string.Empty;
+    public string RevolutHandle { get; set; } = string.Empty;
+    public string CardPaymentUrl { get; set; } = string.Empty;
 }
 
 public class UpdateBrandingRequest
 {
     public string? AppName { get; set; }
+    public string? SiteUrl { get; set; }
     public string? LogoUrl { get; set; }
     public string? PrimaryColor { get; set; }
     public string? SecondaryColor { get; set; }
     public string? ThemeMode { get; set; }
+    public string? WiseHandle { get; set; }
+    public string? RevolutHandle { get; set; }
+    public string? CardPaymentUrl { get; set; }
 }

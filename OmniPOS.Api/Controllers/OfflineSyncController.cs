@@ -58,7 +58,8 @@ public class OfflineSyncController : ControllerBase
                     ServiceCharge = localOrder.ServiceCharge,
                     Discount = localOrder.Discount,
                     DiscountType = localOrder.DiscountType,
-                    FinalTotal = localOrder.FinalTotal
+                    FinalTotal = localOrder.FinalTotal,
+                    IsAmended = localOrder.IsAmended
                 };
 
                 _dbContext.Orders.Add(newOrder);
@@ -95,7 +96,7 @@ public class OfflineSyncController : ControllerBase
                 }
 
                 // Global tenant-wide broadcast for UI refresh (New Order)
-                // await _hubContext.Clients.Group($"Tenant_{newOrder.TenantId}").SendAsync("ReceiveOrderUpdate", new { id = newOrder.OrderId, status = newOrder.WorkflowStatus });
+                await _hubContext.Clients.Group($"Tenant_{newOrder.TenantId}").SendAsync("ReceiveOrderUpdate", new { id = newOrder.OrderId, status = newOrder.WorkflowStatus });
 
                 Console.WriteLine($"[SyncOrders] Success: Order {localOrder.OrderId} added to context.");
                 
@@ -143,6 +144,7 @@ public class OfflineSyncController : ControllerBase
                     existingOrder.Discount = localOrder.Discount;
                     existingOrder.DiscountType = localOrder.DiscountType;
                     existingOrder.FinalTotal = localOrder.FinalTotal;
+                    existingOrder.IsAmended = localOrder.IsAmended;
                     
                     if (isPaidStatus)
                     {
@@ -179,7 +181,7 @@ public class OfflineSyncController : ControllerBase
 
                     if (isAmendment && !isPaidStatus) // Don't double-notify if it's just a payment
                     {
-                        var tableInfoUpdate = !string.IsNullOrEmpty(localOrder.TableId) ? $"Table {localOrder.TableId}" : "Walk-in";
+                        var tableInfoUpdate = !string.IsNullOrEmpty(localOrder.TableNumber) ? $"Table {localOrder.TableNumber}" : (!string.IsNullOrEmpty(localOrder.TableId) ? $"Table {localOrder.TableId}" : "Walk-in");
                         var amendMsg = $"Order for {tableInfoUpdate} has been amended.";
                         var amendRoles = new[] { "Kitchen", "Chef", "Assistant Chef", "Admin", "Manager", "Owner" };
                         
@@ -211,7 +213,7 @@ public class OfflineSyncController : ControllerBase
                     }
 
                     // Global tenant-wide broadcast for UI refresh (Update)
-                    // await _hubContext.Clients.Group($"Tenant_{existingOrder.TenantId}").SendAsync("ReceiveOrderUpdate", new { id = existingOrder.OrderId, status = existingOrder.WorkflowStatus });
+                    await _hubContext.Clients.Group($"Tenant_{existingOrder.TenantId}").SendAsync("ReceiveOrderUpdate", new { id = existingOrder.OrderId, status = existingOrder.WorkflowStatus });
 
                     syncResults.Add(new SyncResultDto { OrderId = localOrder.OrderId, Status = "Updated" });
                 }
@@ -254,7 +256,8 @@ public class OfflineSyncController : ControllerBase
                 ServiceCharge = o.ServiceCharge,
                 Discount = o.Discount,
                 DiscountType = o.DiscountType,
-                FinalTotal = o.FinalTotal
+                FinalTotal = o.FinalTotal,
+                IsAmended = o.IsAmended
             })
             .ToListAsync();
 
@@ -269,9 +272,20 @@ public class OfflineSyncController : ControllerBase
             .FirstOrDefaultAsync(o => o.OrderId == orderId);
 
         if (order == null) return NotFound();
+        
+        // Lookup Table Number for better UX
+        string tableNum = order.TableId; // Fallback
+        if (!string.IsNullOrEmpty(order.TableId))
+        {
+            var tableIds = order.TableId.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var tableObj = await _dbContext.RestaurantTables
+                .Where(t => tableIds.Contains(t.RestaurantTableId.ToString()))
+                .FirstOrDefaultAsync();
+            if (tableObj != null) tableNum = tableObj.TableNumber;
+        }
 
         string action = request.Approve ? "ACCEPTED" : "DECLINED";
-        string msg = $"Kitchen has {action} changes for order on Table {order.TableId}";
+        string msg = $"Kitchen has {action} changes for order on Table {tableNum}";
         
         if (!request.Approve)
         {
@@ -285,6 +299,13 @@ public class OfflineSyncController : ControllerBase
                  order.TotalAmount = request.UpdatedTotalAmount;
              }
              order.PendingAmendmentsJson = "[]"; // Always clear if approved
+             order.IsAmended = true;
+             order.WorkflowStatus = "Amended-Preparing";
+             order.Status = "Amended-Preparing";
+             if (!order.CustomerName.StartsWith("[AMENDED]"))
+             {
+                 order.CustomerName = "[AMENDED] " + order.CustomerName;
+             }
         }
 
         await _dbContext.SaveChangesAsync();
@@ -317,6 +338,10 @@ public class OfflineSyncController : ControllerBase
         }
 
         await _dbContext.SaveChangesAsync();
+
+        // Broadcast Order Update to all clients (IMPORTANT for sync)
+        await _hubContext.Clients.Group($"Tenant_{order.TenantId}").SendAsync("ReceiveOrderUpdate", new { id = order.OrderId, status = order.WorkflowStatus });
+
         return Ok(new { status = "Updated" });
     }
 
@@ -451,6 +476,12 @@ public class OrderSyncDto
 
     [JsonPropertyName("paidAt")]
     public DateTime? PaidAt { get; set; }
+
+    [JsonPropertyName("isAmended")]
+    public bool IsAmended { get; set; }
+
+    [JsonPropertyName("tableNumber")]
+    public string TableNumber { get; set; } = string.Empty;
 }
 
 public class SyncResultDto

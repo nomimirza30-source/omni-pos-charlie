@@ -1,12 +1,12 @@
-# OmniPOS VPS Deployment Configuration v2 (No redundant mounts)
 services:
-  omni_api_v3:
+  api:
     build:
       context: ./OmniPOS.Api
       dockerfile: Dockerfile
-    container_name: omnipos-api-v3
+    container_name: omnipos-api
     networks:
       - omnipos-network
+      - cloudflare_tunnel_default
     volumes:
       - ./OmniPOS.Api/wwwroot/uploads:/app/wwwroot/uploads
       - ./data:/app/data
@@ -16,38 +16,39 @@ services:
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/omnipos.db
     restart: always
 
-  omni_web_v3:
+  web:
     build:
       context: ./OmniPOS.Web-React
       dockerfile: Dockerfile
-    container_name: omnipos-web-v3
+    container_name: omnipos-web
     ports:
       - "8081:80"
       - "8443:443"
     volumes:
-      - ./certbot/conf:/etc/letsencrypt:ro
-      - ./certbot/var:/var/lib/letsencrypt:ro
-      - ./certbot/www:/var/www/certbot:ro
+      - ./OmniPOS.Web-React/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./OmniPOS.Api/wwwroot/uploads:/usr/share/nginx/html/uploads:ro
     depends_on:
-      - omni_api_v3
+      - api
     networks:
       - omnipos-network
+      - cloudflare_tunnel_default
     restart: always
+  # Certbot/SSL is now handled by Cloudflare Tunnel
+  # certbot:
+  #   image: certbot/certbot:latest
+  #   container_name: omnipos-certbot
+  #   volumes:
+  #     - ./certbot/conf:/etc/letsencrypt
+  #     - ./certbot/var:/var/lib/letsencrypt
+  #     - ./certbot/www:/var/www/certbot
+  #   entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+  #   networks:
+  #     - omnipos-network
 
-  certbot:
-    image: certbot/certbot:latest
-    container_name: omnipos-certbot
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/var:/var/lib/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-    networks:
-      - omnipos-network
-
-networks:
   omnipos-network:
     driver: bridge
+  cloudflare_tunnel_default:
+    external: true
 
 # No named volumes needed for certificates now
 # volumes:

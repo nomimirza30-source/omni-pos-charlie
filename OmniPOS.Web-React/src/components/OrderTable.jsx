@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
-import { QrCode, Cloud, CloudOff, User, Users, MapPin, Eye, CheckCircle2, XCircle, Timer, Edit3, Plus, Minus, Trash2, Save, Send, PackageCheck, Banknote, CreditCard, ArrowLeft, Clock, Printer } from 'lucide-react';
+import { QrCode, Cloud, CloudOff, User, Users, MapPin, Eye, CheckCircle2, XCircle, Timer, Edit3, Plus, Minus, Trash2, Save, Send, PackageCheck, Banknote, CreditCard, ArrowLeft, Clock, Printer, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from './Modal';
 import { generateReceipt } from '../utils/receiptGenerator';
+import QRCode from 'qrcode';
 
 const OrderTable = () => {
-    const { orders, currentTenantId, tables, user, updateOrderStatus, updateOrder, deleteOrder, menuItems, completePayment, fetchOrders, syncOrders, branding, proposeAmendment, respondToAmendment, activeOrderId } = useStore();
+    const { orders, currentTenantId, tables, user, updateOrderStatus, updateOrder, deleteOrder, menuItems, completePayment, fetchOrders, syncOrders, branding, proposeAmendment, respondToAmendment, activeOrderId, updateOrderFinancials } = useStore();
     const [selectedOrder, setSelectedOrder] = useState(null);
+    const [qrError, setQrError] = useState(null);
 
     React.useEffect(() => {
         if (activeOrderId) {
@@ -30,6 +32,8 @@ const OrderTable = () => {
     const [isPaymentMode, setIsPaymentMode] = useState(false);
     const [paymentSubMethod, setPaymentSubMethod] = useState(null);
     const [cashReceived, setCashReceived] = useState('');
+    const [wiseQRCode, setWiseQRCode] = useState(null);
+    const qrCanvasRef = useRef(null);
     const [amendedItems, setAmendedItems] = useState([]);
 
     // Payment Adjustments State
@@ -57,8 +61,11 @@ const OrderTable = () => {
 
     const getStatusColor = (status) => {
         switch (status) {
+            case 'Amended-Preparing':
             case 'Preparing': return 'bg-primary/10 text-primary border-primary/20';
+            case 'Amended-Ready':
             case 'Ready': return 'bg-success/10 text-success border-success/20 shadow-[0_0_15px_rgba(52,211,153,0.1)]';
+            case 'Amended-Served':
             case 'Served': return 'bg-success/5 text-success/60 border-success/10';
             case 'Paid': return 'bg-success text-text border-success';
             case 'Declined':
@@ -81,6 +88,7 @@ const OrderTable = () => {
         setIsAmendMode(false);
         setPaymentSubMethod(null);
         setCashReceived('');
+        setWiseQRCode(null);
         // Reset payment adjustments
         setServiceChargeEnabled(false);
         setServiceChargePercent(10);
@@ -90,7 +98,7 @@ const OrderTable = () => {
         setDiscountReason('');
     };
 
-    // Payment Calculations
+    // Payment Calculations (must be before useEffect that uses finalTotal)
     const subtotal = selectedOrder ? parseFloat(selectedOrder.amount || 0) : 0;
     const serviceChargeAmount = serviceChargeEnabled ? subtotal * (serviceChargePercent / 100) : 0;
 
@@ -102,12 +110,71 @@ const OrderTable = () => {
             const limitedPercent = Math.min(discountValue, maxDiscountPercent);
             discountAmount = subtotal * (limitedPercent / 100);
         } else {
-            discountAmount = Math.min(parseFloat(discountValue) || 0, subtotal); // Can't discount more than subtotal
+            discountAmount = Math.min(parseFloat(discountValue) || 0, subtotal);
         }
     }
 
     const finalTotal = Math.max(0, subtotal + serviceChargeAmount - discountAmount);
     const changeDue = (cashReceived && selectedOrder) ? (parseFloat(cashReceived) - finalTotal) : 0;
+
+    const [isSyncingFinancials, setIsSyncingFinancials] = useState(false);
+
+    // Auto-Sync Financials to Server (Debounced)
+    useEffect(() => {
+        if (!isPaymentMode || !selectedOrder) return;
+
+        const timer = setTimeout(async () => {
+            setIsSyncingFinancials(true);
+            await updateOrderFinancials(selectedOrder.id, {
+                serviceCharge: serviceChargeAmount,
+                discount: discountAmount,
+                discountType: discountEnabled ? discountType : 'none',
+                discountReason: discountEnabled ? discountReason : '',
+                finalTotal: finalTotal
+            });
+            setIsSyncingFinancials(false);
+        }, 800);
+
+        return () => clearTimeout(timer);
+    }, [isPaymentMode, selectedOrder?.id, serviceChargeAmount, discountAmount, discountType, discountReason, finalTotal]);
+
+    // Generate QR Code when Bank or Card payment is selected
+    useEffect(() => {
+        if ((paymentSubMethod === 'Bank' || paymentSubMethod === 'Card') && selectedOrder && qrCanvasRef.current) {
+            setQrError(null);
+
+            let baseUrl = branding?.cardPaymentUrl || window.location.origin;
+
+            // FIX: If running on localhost, swap with actual LAN IP so phone can connect
+            // For this specific debugging session, hardcoding the LAN IP
+            baseUrl = 'http://192.168.1.100:5173';
+
+            const qrUrl = `${baseUrl}/pay/${selectedOrder.id}`;
+
+            console.log('[OrderTable] Generating Web QR:', qrUrl);
+
+            QRCode.toCanvas(
+                qrCanvasRef.current,
+                qrUrl,
+                {
+                    width: 280,
+                    margin: 2,
+                    color: {
+                        dark: '#334155',
+                        light: '#ffffff'
+                    },
+                    errorCorrectionLevel: 'M'
+                },
+                (error) => {
+                    if (error) {
+                        console.error('QR Gen Error:', error);
+                        setQrError('Failed to generate QR code');
+                    }
+                }
+            );
+        }
+    }, [paymentSubMethod, selectedOrder, branding]);
+
 
     const handleProcessPayment = (method) => {
         const adjustments = {
@@ -115,7 +182,6 @@ const OrderTable = () => {
             discount: discountAmount,
             discountType: discountEnabled ? discountType : 'none',
             discountReason: discountEnabled ? discountReason : '',
-            serviceCharge: serviceChargeAmount,
             finalTotal: finalTotal
         };
         completePayment(selectedOrder.id, method, adjustments);
@@ -226,13 +292,18 @@ const OrderTable = () => {
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-2">
                                                 <div className={`p-1.5 rounded-lg border ${getStatusColor(order.status)}`}>
-                                                    {order.status === 'Preparing' ? <Timer size={10} className="animate-spin" /> :
-                                                        order.status === 'Ready' ? <CheckCircle2 size={10} /> :
-                                                            order.status === 'Served' ? <CheckCircle2 size={10} /> :
+                                                    {order.status.includes('Preparing') ? <Timer size={10} className="animate-spin" /> :
+                                                        order.status.includes('Ready') ? <CheckCircle2 size={10} /> :
+                                                            order.status.includes('Served') ? <CheckCircle2 size={10} /> :
                                                                 <Clock size={10} />
                                                     }
                                                 </div>
                                                 <div className="font-bold text-text text-[10px]">{order.status}</div>
+                                                {order.isAmended && (
+                                                    <div className="bg-warning/20 text-warning text-[8px] font-black px-1.5 py-0.5 rounded border border-warning/30 uppercase tracking-tighter">
+                                                        Amended
+                                                    </div>
+                                                )}
                                             </div>
                                             <div className="text-[8px] font-mono opacity-40 uppercase mt-1">{order.id.slice(0, 8)}...</div>
                                         </td>
@@ -282,7 +353,7 @@ const OrderTable = () => {
                                                 {(['Admin', 'Manager', 'Kitchen', 'Chef', 'Assistant Chef', 'Waiter', 'Server', 'Wait Staff', 'Till', 'Owner'].includes(user.role)) && (
                                                     <>
                                                         {/* Accept Action: Allow 'Placed' or 'Pending' for Kitchen/Admin/Owner */}
-                                                        {(['Placed', 'Pending'].includes(order.status)) &&
+                                                        {((['Placed', 'Pending'].includes(order.status)) || (order.isAmended && order.status === 'Placed')) &&
                                                             (['Admin', 'Manager', 'Kitchen', 'Chef', 'Assistant Chef', 'Owner'].includes(user.role)) && (
                                                                 <>
                                                                     <button
@@ -295,6 +366,7 @@ const OrderTable = () => {
                                                                     <button
                                                                         onClick={() => {
                                                                             console.log('[OrderTable] Accepting order:', order.id);
+                                                                            // Backend handles auto-prefixing status if isAmended is true
                                                                             updateOrderStatus(order.id, 'Preparing');
                                                                         }}
                                                                         className="flex items-center gap-2 px-3 py-1.5 bg-primary/20 text-primary border border-primary/30 rounded-xl hover:bg-primary/30 transition-all font-black text-[10px] uppercase shadow-lg shadow-primary/5"
@@ -303,7 +375,7 @@ const OrderTable = () => {
                                                                     </button>
                                                                 </>
                                                             )}
-                                                        {order.status === 'Preparing' && ['Admin', 'Manager', 'Kitchen', 'Chef', 'Assistant Chef', 'Owner'].includes(user.role) && (
+                                                        {(order.status === 'Preparing' || order.status === 'Amended-Preparing') && ['Admin', 'Manager', 'Kitchen', 'Chef', 'Assistant Chef', 'Owner'].includes(user.role) && (
                                                             <button
                                                                 onClick={() => updateOrderStatus(order.id, 'Ready')}
                                                                 className="flex items-center gap-2 px-3 py-1.5 bg-success/20 text-success border border-success/30 rounded-xl hover:bg-success/30 transition-all font-black text-[10px] uppercase"
@@ -311,7 +383,7 @@ const OrderTable = () => {
                                                                 <CheckCircle2 size={14} /> Ready
                                                             </button>
                                                         )}
-                                                        {order.status === 'Ready' && ['Admin', 'Manager', 'Waiter', 'Server', 'Wait Staff', 'Owner'].includes(user.role) && (
+                                                        {(order.status === 'Ready' || order.status === 'Amended-Ready') && ['Admin', 'Manager', 'Waiter', 'Server', 'Wait Staff', 'Owner'].includes(user.role) && (
                                                             <button
                                                                 onClick={() => updateOrderStatus(order.id, 'Served')}
                                                                 className="flex items-center gap-2 px-3 py-1.5 bg-success text-text rounded-xl hover:shadow-lg hover:shadow-success/20 transition-all font-black text-[10px] uppercase"
@@ -349,7 +421,7 @@ const OrderTable = () => {
                                                 )}
 
                                                 {/* Admin Only: Payment/Checkout */}
-                                                {(user.role === 'Admin' || user.role === 'Till' || user.role === 'Manager') && order.status === 'Served' && (
+                                                {(user.role === 'Admin' || user.role === 'Till' || user.role === 'Manager') && (order.status === 'Served' || order.status === 'Amended-Served') && (
                                                     <button
                                                         onClick={() => startPayment(order)}
                                                         className="flex items-center gap-2 px-4 py-2 bg-secondary text-slate-900 rounded-xl hover:shadow-lg hover:shadow-secondary/20 transition-all font-black text-[10px] uppercase animate-pulse"
@@ -378,7 +450,7 @@ const OrderTable = () => {
                     setPaymentSubMethod(null);
                     setCashReceived('');
                 }}
-                title={isAmendMode ? "Amend Digital Order" : isPaymentMode ? "Settle Transaction" : "Digital Order Details"}
+                title={isAmendMode ? "Amend Digital Order" : isPaymentMode ? "SETTLE TRANSACTION (DEBUG MODE)" : "Digital Order Details"}
             >
                 {displayOrder && (
                     <div className="space-y-6">
@@ -556,8 +628,8 @@ const OrderTable = () => {
                                         </div>
                                     ))}
 
-                                    {/* Action Buttons for Kitchen/Admin/Manager */}
-                                    {(user.role === 'Kitchen' || user.role === 'Admin' || user.role === 'Manager') && (
+                                    {/* Action Buttons for Kitchen/Admin/Manager/Owner */}
+                                    {(['Kitchen', 'Chef', 'Assistant Chef', 'Admin', 'Manager', 'Owner'].includes(user.role)) && (
                                         <div className="grid grid-cols-2 gap-3 pt-2">
                                             <button
                                                 onClick={() => respondToAmendment(displayOrder.id, false)}
@@ -591,7 +663,7 @@ const OrderTable = () => {
                         )}
 
                         {/* Main Settlement Action */}
-                        {displayOrder.status === 'Delivered' && !isPaymentMode && (
+                        {(displayOrder.status === 'Served' || displayOrder.status === 'Amended-Served') && !isPaymentMode && (
                             <button
                                 onClick={() => startPayment(displayOrder)}
                                 className="w-full bg-primary text-slate-900 font-black py-4 rounded-2xl flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-primary/20 transition-all group overflow-hidden relative"
@@ -725,7 +797,14 @@ const OrderTable = () => {
 
                                     {/* Final Total */}
                                     <div className="flex justify-between items-center pt-3 border-t-2 border-primary/30">
-                                        <span className="text-base font-black text-primary uppercase">Final Total</span>
+                                        <div className="flex flex-col">
+                                            <span className="text-base font-black text-primary uppercase">Final Total</span>
+                                            {isSyncingFinancials && (
+                                                <span className="text-[10px] text-muted animate-pulse font-bold tracking-widest uppercase">
+                                                    Syncing...
+                                                </span>
+                                            )}
+                                        </div>
                                         <span className="text-3xl font-black text-primary">£{finalTotal.toFixed(2)}</span>
                                     </div>
 
@@ -757,7 +836,7 @@ const OrderTable = () => {
 
                                 {/* Payment Method Selection or Cash Calculator */}
                                 {!paymentSubMethod ? (
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-3 gap-3">
                                         <button
                                             onClick={() => setPaymentSubMethod('Cash')}
                                             className="bg-success text-text font-black py-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-success/20 hover:scale-[1.02] transition-all"
@@ -766,14 +845,21 @@ const OrderTable = () => {
                                             <span>CASH</span>
                                         </button>
                                         <button
-                                            onClick={() => handleProcessPayment('Card')}
+                                            onClick={() => setPaymentSubMethod('Card')}
                                             className="bg-primary text-text font-black py-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all"
                                         >
                                             <CreditCard size={24} />
-                                            <span>CARD</span>
+                                            <span>CARD QR</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setPaymentSubMethod('Bank')}
+                                            className="bg-indigo-500 text-white font-black py-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 hover:scale-[1.02] transition-all"
+                                        >
+                                            <QrCode size={24} />
+                                            <span>BANK QR</span>
                                         </button>
                                     </div>
-                                ) : (
+                                ) : paymentSubMethod === 'Cash' ? (
                                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                         <div className="flex items-center justify-between">
                                             <h4 className="text-[10px] font-black text-success uppercase tracking-widest pl-1">Cash Calculator</h4>
@@ -837,7 +923,64 @@ const OrderTable = () => {
                                             <span>COMPLETE CASH PAYMENT</span>
                                         </button>
                                     </div>
-                                )}
+                                ) : (paymentSubMethod === 'Bank' || paymentSubMethod === 'Card') ? (
+                                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className={`text-[10px] font-black uppercase tracking-widest pl-1 ${paymentSubMethod === 'Card' ? 'text-primary' : 'text-indigo-400'}`}>
+                                                {paymentSubMethod === 'Card' ? 'Card Payment (Camera Scan)' : 'Bank Transfer (App Scan)'}
+                                            </h4>
+                                            <button onClick={() => setPaymentSubMethod(null)} className="text-[10px] font-black text-muted hover:text-text uppercase tracking-widest">Change Method</button>
+                                        </div>
+
+                                        <div className={`bg-gradient-to-br rounded-2xl p-6 space-y-4 border ${paymentSubMethod === 'Card' ? 'from-primary/10 to-primary/5 border-primary/20' : 'from-indigo-500/10 to-indigo-500/5 border-indigo-500/20'}`}>
+                                            <div className="text-center space-y-3">
+                                                <div className="flex justify-center">
+                                                    <div className="bg-white p-4 rounded-2xl shadow-xl min-h-[200px] flex items-center justify-center">
+                                                        <canvas ref={qrCanvasRef} className="mx-auto" />
+                                                        {qrError && (
+                                                            <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center p-4">
+                                                                <p className="text-red-500 text-xs font-bold text-center">{qrError}</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className={`text-xs font-black uppercase tracking-wide ${paymentSubMethod === 'Card' ? 'text-primary' : 'text-indigo-400'}`}>
+                                                        {paymentSubMethod === 'Card' ? 'Scan with Phone Camera' : 'Scan From Banking App'}
+                                                    </p>
+                                                    <p className="text-[10px] text-muted font-medium">
+                                                        {paymentSubMethod === 'Card' ? 'Customer scans this with their regular camera app' : 'Customer scans this inside their Revolut/Wise/Bank app'}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white/50 backdrop-blur-sm rounded-xl p-4 space-y-2">
+                                                <div className="flex justify-between items-center text-slate-900">
+                                                    <span className="text-xs font-bold opacity-60">Total Amount</span>
+                                                    <span className="text-lg font-black">£{finalTotal.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-slate-800">
+                                                    <span className="text-xs font-bold opacity-60">Reference</span>
+                                                    <span className="text-xs font-black">Order-{selectedOrder?.id.slice(0, 8)}</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-warning/10 border border-warning/30 rounded-xl p-3">
+                                                <p className="text-[10px] text-warning font-bold text-center">
+                                                    ⚠️ Confirm payment on your business device before completing
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={() => handleProcessPayment(paymentSubMethod)}
+                                            className={`w-full text-text font-black py-4 rounded-xl flex items-center justify-center gap-3 shadow-xl transition-all ${paymentSubMethod === 'Card' ? 'bg-primary shadow-primary/20' : 'bg-indigo-500 shadow-indigo-500/20'}`}
+                                        >
+                                            {paymentSubMethod === 'Card' ? <CreditCard size={20} /> : <QrCode size={20} />}
+                                            <span>CONFIRM {paymentSubMethod.toUpperCase()} PAYMENT RECEIVED</span>
+                                        </button>
+                                    </div>
+                                ) : null}
 
                                 {/* Cancel Button */}
                                 <button

@@ -12,6 +12,15 @@ public class PaymentRequest
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "GBP";
     public string PaymentMethod { get; set; } = "Card";
+    public CardDetails? CardDetails { get; set; }
+}
+
+public class CardDetails
+{
+    public string Name { get; set; } = string.Empty;
+    public string CardNumber { get; set; } = string.Empty;
+    public string Expiry { get; set; } = string.Empty;
+    public string Cvv { get; set; } = string.Empty;
 }
 
 public class PaymentResponse

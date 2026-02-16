@@ -68,10 +68,18 @@ public class OrderController : ControllerBase
             }
 
             var oldStatus = order.WorkflowStatus;
-            Console.WriteLine($"[UpdateStatus] Transitioning from {oldStatus} to {request.NewStatus}");
+            string newStatus = request.NewStatus;
             
-            order.WorkflowStatus = request.NewStatus;
-            order.Status = request.NewStatus; // Sync legacy/offline status field
+            // Auto-prefix status if order is amended
+            if (order.IsAmended && !newStatus.StartsWith("Amended-") && newStatus != "Paid" && newStatus != "Declined")
+            {
+                newStatus = "Amended-" + newStatus;
+            }
+
+            Console.WriteLine($"[UpdateStatus] Transitioning from {oldStatus} to {newStatus}");
+            
+            order.WorkflowStatus = newStatus;
+            order.Status = newStatus; // Sync legacy/offline status field
 
             // Add to history
             var history = string.IsNullOrEmpty(order.StatusHistory) 
@@ -80,14 +88,14 @@ public class OrderController : ControllerBase
                 
             history.Add(new StatusHistoryItem 
             { 
-                Status = request.NewStatus, 
+                Status = newStatus, 
                 Timestamp = DateTime.UtcNow, 
                 UserId = User.Identity?.Name ?? "Unknown" 
             });
             order.StatusHistory = JsonSerializer.Serialize(history);
 
             // Transition Logic
-            if (request.NewStatus == "Paid")
+            if (newStatus == "Paid")
             {
                 order.CanAmend = false;
                 order.PaidAt = DateTime.UtcNow;
@@ -140,37 +148,41 @@ public class OrderController : ControllerBase
             // Notification Logic based on Business Rules
             var notifications = new List<(string Role, string Message, string Type)>();
             string tableInfo = order.TableId != null ? $"Table {order.TableId}" : "Walk-in";
+            string orderLabel = order.IsAmended ? "AMENDED order" : "order";
 
-            switch (request.NewStatus)
+            switch (newStatus)
             {
-                case "Preparing": // Kitchen Accepts
-                    notifications.Add(("Waiter", $"Kitchen ACCEPTED order for {tableInfo}", "info"));
-                    notifications.Add(("Manager", $"Kitchen ACCEPTED order for {tableInfo}", "info"));
-                    notifications.Add(("Admin", $"Kitchen ACCEPTED order for {tableInfo}", "info"));
-                    notifications.Add(("Owner", $"Kitchen ACCEPTED order for {tableInfo}", "info"));
+                case "Preparing":
+                case "Amended-Preparing": // Kitchen Accepts
+                    notifications.Add(("Waiter", $"Kitchen ACCEPTED {orderLabel} for {tableInfo}", "info"));
+                    notifications.Add(("Manager", $"Kitchen ACCEPTED {orderLabel} for {tableInfo}", "info"));
+                    notifications.Add(("Admin", $"Kitchen ACCEPTED {orderLabel} for {tableInfo}", "info"));
+                    notifications.Add(("Owner", $"Kitchen ACCEPTED {orderLabel} for {tableInfo}", "info"));
                     break;
 
                 case "Declined": // Kitchen Declines
-                    notifications.Add(("Waiter", $"Kitchen DECLINED order for {tableInfo}", "error"));
-                    notifications.Add(("Manager", $"Kitchen DECLINED order for {tableInfo}", "error"));
-                    notifications.Add(("Admin", $"Kitchen DECLINED order for {tableInfo}", "error"));
-                    notifications.Add(("Owner", $"Kitchen DECLINED order for {tableInfo}", "error"));
+                    notifications.Add(("Waiter", $"Kitchen DECLINED {orderLabel} for {tableInfo}", "error"));
+                    notifications.Add(("Manager", $"Kitchen DECLINED {orderLabel} for {tableInfo}", "error"));
+                    notifications.Add(("Admin", $"Kitchen DECLINED {orderLabel} for {tableInfo}", "error"));
+                    notifications.Add(("Owner", $"Kitchen DECLINED {orderLabel} for {tableInfo}", "error"));
                     break;
 
-                case "Ready": // Kitchen signals Ready
-                    notifications.Add(("Waiter", $"Order for {tableInfo} is READY to serve!", "success"));
-                    notifications.Add(("Manager", $"Order for {tableInfo} is READY to serve!", "success"));
-                    notifications.Add(("Admin", $"Order for {tableInfo} is READY to serve!", "success"));
-                    notifications.Add(("Owner", $"Order for {tableInfo} is READY to serve!", "success"));
+                case "Ready":
+                case "Amended-Ready": // Kitchen signals Ready
+                    notifications.Add(("Waiter", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} is READY to serve!", "success"));
+                    notifications.Add(("Manager", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} is READY to serve!", "success"));
+                    notifications.Add(("Admin", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} is READY to serve!", "success"));
+                    notifications.Add(("Owner", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} is READY to serve!", "success"));
                     break;
 
-                case "Served": // Waiter Delivers
-                    notifications.Add(("Manager", $"Order for {tableInfo} has been SERVED.", "info"));
-                    notifications.Add(("Kitchen", $"Order for {tableInfo} has been SERVED.", "info"));
-                    notifications.Add(("Chef", $"Order for {tableInfo} has been SERVED.", "info"));
-                    notifications.Add(("Assistant Chef", $"Order for {tableInfo} has been SERVED.", "info"));
-                    notifications.Add(("Admin", $"Order for {tableInfo} has been SERVED.", "info"));
-                    notifications.Add(("Owner", $"Order for {tableInfo} has been SERVED.", "info"));
+                case "Served":
+                case "Amended-Served": // Waiter Delivers
+                    notifications.Add(("Manager", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} has been SERVED.", "info"));
+                    notifications.Add(("Kitchen", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} has been SERVED.", "info"));
+                    notifications.Add(("Chef", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} has been SERVED.", "info"));
+                    notifications.Add(("Assistant Chef", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} has been SERVED.", "info"));
+                    notifications.Add(("Admin", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} has been SERVED.", "info"));
+                    notifications.Add(("Owner", $"{char.ToUpper(orderLabel[0]) + orderLabel.Substring(1)} for {tableInfo} has been SERVED.", "info"));
                     break;
                     
                 case "Paid":
@@ -207,9 +219,9 @@ public class OrderController : ControllerBase
                  {
                      id = notification.NotificationId,
                      title = note.Type == "error" ? "Order Alert" : 
-                             request.NewStatus == "Preparing" ? "Kitchen Accepted" :
-                             request.NewStatus == "Ready" ? "Order Ready" :
-                             request.NewStatus == "Paid" ? "Payment Received" : "Order Update",
+                             newStatus.Contains("Preparing") ? (order.IsAmended ? "Amendment Accepted" : "Kitchen Accepted") :
+                             newStatus.Contains("Ready") ? (order.IsAmended ? "Amended Order Ready" : "Order Ready") :
+                             newStatus == "Paid" ? "Payment Received" : "Order Update",
                      message = note.Message,
                      type = note.Type,
                      orderId = order.OrderId,
@@ -236,6 +248,68 @@ public class OrderController : ControllerBase
             return StatusCode(500, new { error = ex.Message, stack = ex.StackTrace });
         }
     }
+
+    [HttpPut("{id}/financials")]
+    [Authorize(Policy = "RequireServer")]
+    public async Task<IActionResult> UpdateFinancials(Guid id, [FromBody] FinancialUpdateDto request)
+    {
+        try
+        {
+            var order = await _context.Orders.IgnoreQueryFilters().FirstOrDefaultAsync(o => o.OrderId == id);
+            if (order == null) return NotFound();
+
+            bool changed = false;
+
+            if (request.ServiceCharge.HasValue)
+            {
+                order.ServiceCharge = request.ServiceCharge.Value;
+                changed = true;
+            }
+            if (request.Discount.HasValue)
+            {
+                order.Discount = request.Discount.Value;
+                changed = true;
+            }
+            if (!string.IsNullOrEmpty(request.DiscountType))
+            {
+                order.DiscountType = request.DiscountType;
+                changed = true;
+            }
+            if (!string.IsNullOrEmpty(request.DiscountReason))
+            {
+                order.DiscountReason = request.DiscountReason;
+                changed = true;
+            }
+            if (request.FinalTotal.HasValue)
+            {
+                order.FinalTotal = request.FinalTotal.Value;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await _context.SaveChangesAsync();
+                
+                // Broadcast update silently so other clients (like the QR page) get the latest data
+                await _hubContext.Clients.Group($"Tenant_{order.TenantId}").SendAsync("ReceiveOrderUpdate", new { id = order.OrderId, status = order.WorkflowStatus });
+            }
+
+            return Ok(new { status = "Updated" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+}
+
+public class FinancialUpdateDto
+{
+    public decimal? ServiceCharge { get; set; }
+    public decimal? Discount { get; set; }
+    public string? DiscountType { get; set; }
+    public string? DiscountReason { get; set; }
+    public decimal? FinalTotal { get; set; }
 }
 
 public class StatusUpdateDto

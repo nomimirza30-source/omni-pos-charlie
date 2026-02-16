@@ -6,18 +6,39 @@ import { motion, AnimatePresence } from 'framer-motion';
 const NotificationTray = () => {
     const { notifications, clearNotification, user, setView } = useStore();
 
-    const handleNotificationClick = (n) => {
+    const handleNotificationClick = React.useCallback((n) => {
         if (n.orderId) {
             useStore.setState({ activeOrderId: n.orderId });
             setView('Dashboard');
         }
         clearNotification(n.id);
-    };
+    }, [clearNotification, setView]);
+
+    const handleClear = React.useCallback((id) => {
+        clearNotification(id);
+    }, [clearNotification]);
 
     // Filter notifications based on user role
-    const relevantNotifications = notifications.filter(n =>
-        !n.roleFilter || n.roleFilter.includes(user.role)
-    );
+    const relevantNotifications = React.useMemo(() => {
+        const canonicalRole = (role) => {
+            if (!role) return '';
+            if (['Chef', 'Assistant Chef', 'Kitchen'].includes(role)) return 'Kitchen';
+            return role;
+        };
+
+        const userCanonical = canonicalRole(user?.role);
+
+        return notifications.filter(n => {
+            if (!n.roleFilter) return true;
+
+            // Map filters canonical roles if they are kitchen related
+            const canonicalFilters = n.roleFilter.map(r =>
+                ['Chef', 'Assistant Chef', 'Kitchen'].includes(r) ? 'Kitchen' : r
+            );
+
+            return n.roleFilter.includes(user?.role) || canonicalFilters.includes(userCanonical);
+        });
+    }, [notifications, user?.role]);
 
     return (
         <div className="fixed top-24 right-6 z-[100] flex flex-col gap-3 w-80 pointer-events-none">
@@ -27,7 +48,7 @@ const NotificationTray = () => {
                         key={n.id}
                         notification={n}
                         onClick={() => handleNotificationClick(n)}
-                        onClear={() => clearNotification(n.id)}
+                        onClear={() => handleClear(n.id)}
                     />
                 ))}
             </AnimatePresence>
@@ -80,9 +101,10 @@ const NotificationItem = ({ notification, onClear, onClick }) => {
                 </div>
                 <button
                     onClick={(e) => { e.stopPropagation(); onClear(); }}
-                    className="p-1 hover:bg-glass/20 rounded-lg transition-colors text-muted hover:text-text"
+                    className="p-2 -mr-1 hover:bg-glass/20 rounded-xl transition-all text-muted hover:text-red-400 group/close"
+                    title="Dismiss"
                 >
-                    <X size={14} />
+                    <X size={16} className="group-hover/close:rotate-90 transition-transform duration-300" />
                 </button>
             </div>
 

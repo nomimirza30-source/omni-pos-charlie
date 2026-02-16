@@ -5,7 +5,15 @@ public class BankSelectorDriver : IPaymentGateway
     public async Task<PaymentResponse> ProcessPaymentAsync(PaymentRequest request)
     {
         // Simulate external bank API call
-        await Task.Delay(500); 
+        await Task.Delay(1000); 
+
+        if (request.PaymentMethod == "Card" && request.CardDetails != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.CardDetails.CardNumber) || request.CardDetails.CardNumber.Length < 13)
+            {
+                return new PaymentResponse { Success = false, Message = "Invalid Card Number" };
+            }
+        }
 
         return new PaymentResponse
         {

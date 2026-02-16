@@ -110,10 +110,16 @@ public class Tenant
     public Guid TenantId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string AppName { get; set; } = "OmniPOS";
+    public string SiteUrl { get; set; } = string.Empty; // Public URL for QR codes
     public string LogoUrl { get; set; } = string.Empty;
     public string PrimaryColor { get; set; } = "#38bdf8"; // Default Sky Blue
     public string SecondaryColor { get; set; } = "#818cf8"; // Default Indigo
     public string ThemeMode { get; set; } = "dark"; // dark or light
+    public string WiseHandle { get; set; } = string.Empty; // For automated "Approve/Reject" links
+    public string RevolutHandle { get; set; } = string.Empty; // For automated Revolut payment links
+    public string CardPaymentUrl { get; set; } = string.Empty; // For card payment (e.g. Stripe/Square link)
+    public string WiseApiKey { get; set; } = string.Empty; // For Wise API Integration
+    public string WiseProfileId { get; set; } = string.Empty; // For Wise API Integration
 }
 
 public class Staff : ITenantEntity
@@ -184,6 +190,7 @@ public class Order : ITenantEntity
     public bool CanAmend { get; set; } = true; // False after Paid
     public string StatusHistory { get; set; } = "[]"; // JSON array of {status, timestamp, userId}
     public string DiscountReason { get; set; } = string.Empty;
+    public bool IsAmended { get; set; } = false;
 }
 
 public class OrderItem : ITenantEntity

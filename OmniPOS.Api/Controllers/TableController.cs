@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OmniPOS.Api.Data;
+using Microsoft.AspNetCore.SignalR;
 
 namespace OmniPOS.Api.Controllers;
 

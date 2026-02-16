@@ -45,6 +45,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddScoped<IPaymentGateway, BankSelectorDriver>();
 builder.Services.AddScoped<QrCodeService>();
+builder.Services.AddHttpClient<IWiseService, WiseService>();
 // builder.Services.AddScoped<VIPService>(); // Shadow VIP Service removed
 
 // Phase 3: JWT & RBAC Configuration
@@ -99,6 +100,17 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<OmniDbContext>();
+        context.Database.EnsureCreated();
+
+        // Manual Schema Update for Wise Integration (since Migrations are tricky here)
+        try 
+        {
+            context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN WiseApiKey TEXT DEFAULT ''");
+            context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN WiseProfileId TEXT DEFAULT ''");
+            Console.WriteLine("[Schema] Added Wise columns to Tenants table.");
+        }
+        catch (Exception) { /* Columns likely exist, ignore */ }
+        // var context already declared above
         Console.WriteLine("[DEBUG] EF GenerateCreateScript Output:");
         Console.WriteLine(context.Database.GenerateCreateScript());
         context.Database.EnsureCreated();
@@ -157,6 +169,24 @@ using (var scope = app.Services.CreateScope())
             context.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN DiscountReason TEXT");
             Console.WriteLine("[Database] Added DiscountReason column.");
         } catch { }
+
+        try
+        {
+            context.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN IsAmended INTEGER DEFAULT 0");
+            Console.WriteLine("[Database] Added IsAmended column.");
+        } catch (Exception ex) { Console.WriteLine($"[Database] IsAmended column skip: {ex.Message}"); }
+
+        // Manual Schema Update for Tenants (Branding & Handles)
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN AppName TEXT DEFAULT 'OmniPOS'"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN SiteUrl TEXT DEFAULT ''"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN LogoUrl TEXT DEFAULT ''"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN PrimaryColor TEXT DEFAULT '#38bdf8'"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN SecondaryColor TEXT DEFAULT '#818cf8'"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN ThemeMode TEXT DEFAULT 'dark'"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN WiseHandle TEXT DEFAULT ''"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN RevolutHandle TEXT DEFAULT ''"); } catch { }
+        try { context.Database.ExecuteSqlRaw("ALTER TABLE Tenants ADD COLUMN CardPaymentUrl TEXT DEFAULT ''"); } catch { }
+        Console.WriteLine("[Database] Tenants branding columns ensured.");
 
 
 
@@ -260,7 +290,10 @@ using (var scope = app.Services.CreateScope())
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    // Trust all proxies in the local network (Docker environment)
+    KnownNetworks = { },
+    KnownProxies = { }
 });
 
 if (app.Environment.IsDevelopment())

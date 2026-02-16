@@ -9,10 +9,14 @@ const BrandingSettings = () => {
     const uploadLogo = useStore(state => state.uploadLogo);
     const setBrandingLocal = useStore(state => state.setBrandingLocal);
     const [appName, setAppName] = useState(branding.appName);
+    const [siteUrl, setSiteUrl] = useState(branding.siteUrl);
     const [logoUrl, setLogoUrl] = useState(branding.logoUrl);
     const [primaryColor, setPrimaryColor] = useState(branding.primaryColor);
     const [secondaryColor, setSecondaryColor] = useState(branding.secondaryColor);
     const [themeMode, setThemeMode] = useState(branding.themeMode);
+    const [wiseHandle, setWiseHandle] = useState(branding.wiseHandle || '');
+    const [revolutHandle, setRevolutHandle] = useState(branding.revolutHandle || '');
+    const [cardPaymentUrl, setCardPaymentUrl] = useState(branding.cardPaymentUrl || '');
     const [isUploading, setIsUploading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -20,11 +24,15 @@ const BrandingSettings = () => {
     React.useEffect(() => {
         console.log('[BrandingSettings] Store branding changed, syncing local state');
         setAppName(branding.appName);
+        setSiteUrl(branding.siteUrl);
         setLogoUrl(branding.logoUrl);
         setPrimaryColor(branding.primaryColor);
         setSecondaryColor(branding.secondaryColor);
         setThemeMode(branding.themeMode);
-    }, [branding.appName, branding.logoUrl, branding.primaryColor, branding.secondaryColor, branding.themeMode]);
+        setWiseHandle(branding.wiseHandle || '');
+        setRevolutHandle(branding.revolutHandle || '');
+        setCardPaymentUrl(branding.cardPaymentUrl || '');
+    }, [branding.appName, branding.siteUrl, branding.logoUrl, branding.primaryColor, branding.secondaryColor, branding.themeMode, branding.wiseHandle, branding.revolutHandle, branding.cardPaymentUrl]);
 
     const handleFileChange = async (e) => {
         const file = e.target.files[0];
@@ -46,10 +54,14 @@ const BrandingSettings = () => {
         try {
             await updateBranding({
                 appName,
+                siteUrl,
                 logoUrl,
                 primaryColor,
                 secondaryColor,
-                themeMode
+                themeMode,
+                wiseHandle,
+                revolutHandle,
+                cardPaymentUrl
             });
             alert('Branding settings saved successfully!');
         } catch (error) {
@@ -97,6 +109,66 @@ const BrandingSettings = () => {
                                     placeholder="Enter App Name"
                                 />
                             </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-black text-muted tracking-widest mb-3 block">System Public URL (for QR Codes)</label>
+                            <div className="relative">
+                                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={siteUrl}
+                                    onChange={(e) => setSiteUrl(e.target.value)}
+                                    className="w-full bg-glass/20 border border-white/10 rounded-2xl p-4 pl-12 text-text focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
+                                    placeholder="e.g., http://192.168.1.100:5173 or https://pos.example.com"
+                                />
+                            </div>
+                            <p className="text-[9px] text-muted mt-2 pl-1">Important: Use your computer's IP address (like http://192.168.1.100:5173) so phones can connect.</p>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-black text-muted tracking-widest mb-3 block">Wise Business Handle</label>
+                            <div className="relative">
+                                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={wiseHandle}
+                                    onChange={(e) => setWiseHandle(e.target.value)}
+                                    className="w-full bg-glass/20 border border-white/10 rounded-2xl p-4 pl-12 text-text focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
+                                    placeholder="e.g. iyiluxurydining"
+                                />
+                            </div>
+                            <p className="text-[9px] text-muted mt-2 pl-1">This enables automated "Approve/Reject" links in the payment app.</p>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-black text-muted tracking-widest mb-3 block">Revolut Business Handle</label>
+                            <div className="relative">
+                                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={revolutHandle}
+                                    onChange={(e) => setRevolutHandle(e.target.value)}
+                                    className="w-full bg-glass/20 border border-white/10 rounded-2xl p-4 pl-12 text-text focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
+                                    placeholder="e.g. iyiluxury"
+                                />
+                            </div>
+                            <p className="text-[9px] text-muted mt-2 pl-1">This enables automated Revolut payment links.</p>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-black text-muted tracking-widest mb-3 block">Card Payment URL (e.g. Stripe)</label>
+                            <div className="relative">
+                                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={cardPaymentUrl}
+                                    onChange={(e) => setCardPaymentUrl(e.target.value)}
+                                    className="w-full bg-glass/20 border border-white/10 rounded-2xl p-4 pl-12 text-text focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all font-bold"
+                                    placeholder="e.g. https://buy.stripe.com/..."
+                                />
+                            </div>
+                            <p className="text-[9px] text-muted mt-2 pl-1">This enables the "Pay by Card" button on the payment page.</p>
                         </div>
 
                         <div>
