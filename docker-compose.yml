@@ -45,6 +45,8 @@ services:
   #   networks:
   #     - omnipos-network
 
+
+networks:
   omnipos-network:
     driver: bridge
   cloudflare_tunnel_default:
